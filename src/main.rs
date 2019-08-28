@@ -24,7 +24,6 @@ fn parse_args(args : &mut VecDeque<String>) -> Option<u64> {
 fn setup_term() -> File {
     use termios::*;
 
-    // TODO don't open / close device every time
     let tty = File::open("/dev/tty").unwrap();
     let mut term = Termios::from_fd(tty.as_raw_fd()).unwrap(); // Unix only
     // let mut term = termios::tcgetattr(tty.as_raw_fd).unwrap(); // Unix only
@@ -48,19 +47,17 @@ fn pager<R : Read, W : Write>(from :  &mut R, to : &mut W ) {
         lines += 1;
         buffer.clear();
 
+        let tty = setup_term();
         if lines % PAGE_LINES == 0 {
             // wait for input
             writer.flush().unwrap();
-            'user: loop {
-                let tty = setup_term();
-                for byte in tty.bytes() {
-                    match byte.unwrap() {
-                        b' ' => break 'user,
-                        b'q' => {
-                            break 'files;
-                        }
-                        _ => ()
+            'user: for byte in tty.bytes() {
+                match byte.unwrap() {
+                    b' ' => break 'user,
+                    b'q' => {
+                        break 'files;
                     }
+                    _ => ()
                 }
             }
         }
