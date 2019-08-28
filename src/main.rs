@@ -1,20 +1,23 @@
 use std::env;
-use std::io::{self, Read};
+use std::io::{self};
 use std::fs::File;
 
 fn main() -> io::Result<()> {
     let argv : Vec<String> = env::args().collect();
-    let mut buffer = String::new();
     if let Some((_, args)) = argv.split_first() {
         if args.len() > 0 {
+            let unlocked = io::stdout();
+            let mut stdout = unlocked.lock();
             for filename in args {
                 let mut f = File::open(filename)?;
-                f.read_to_string(&mut buffer)?;
-                println!("{}", buffer);
+                io::copy(&mut f, &mut stdout)?;
             }
         } else {
-            io::stdin().read_to_string(&mut buffer)?;
-            println!("{}", buffer);
+            let uout = io::stdout();
+            let mut stdout = uout.lock();
+            let uin = io::stdin();
+            let mut stdin = uin.lock();
+            io::copy(&mut stdin, &mut stdout)?;
         }
     }
     Ok(())
