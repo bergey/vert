@@ -26,13 +26,22 @@ fn setup_term() -> File {
 
     let tty = File::open("/dev/tty").unwrap();
     let mut term = Termios::from_fd(tty.as_raw_fd()).unwrap(); // Unix only
-    // let mut term = termios::tcgetattr(tty.as_raw_fd).unwrap(); // Unix only
     // Unset canonical mode, so we get characters immediately
     // Disable local echo
     term.c_lflag &= !(ICANON | ECHO);
     tcsetattr(tty.as_raw_fd(), TCSADRAIN, &term).unwrap();
     tty
 }
+
+fn reset_term() {
+    use termios::*;
+
+    let tty = File::open("/dev/tty").unwrap();
+    let mut term = Termios::from_fd(tty.as_raw_fd()).unwrap(); // Unix only
+    term.c_lflag |= ICANON | ECHO;
+    tcsetattr(tty.as_raw_fd(), TCSADRAIN, &term).unwrap();
+}
+
 
 fn pager<R : Read, W : Write>(from :  &mut R, to : &mut W ) {
     let mut reader = BufReader::new(from);
@@ -54,7 +63,7 @@ fn pager<R : Read, W : Write>(from :  &mut R, to : &mut W ) {
             'user: for byte in tty.bytes() {
                 match byte.unwrap() {
                     b' ' => break 'user,
-                    b'q' => {
+                    b'q' => {   // TODO should probably exit program, not only current file
                         break 'files;
                     }
                     _ => ()
@@ -81,5 +90,6 @@ fn main() -> io::Result<()> {
         let mut in_lock = stdin.lock();
         pager(&mut in_lock, &mut out_lock)
     }
+    reset_term();
     Ok(())
 }
