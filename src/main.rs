@@ -3,8 +3,10 @@ use std::env;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write, Read};
 use std::os::unix::io::AsRawFd;
+// use std::convert::TryInto;
 
 extern crate termios;
+extern crate term_size;
 
 // TODO currently unused, but we'll need arguments again, presently
 fn parse_args(args : &mut VecDeque<String>) -> Option<u64> {
@@ -48,8 +50,13 @@ fn pager<R : Read, W : Write>(from :  &mut R, to : &mut W ) {
     let mut writer = BufWriter::new(to);
     let mut buffer = vec![];
 
-    let mut lines : u64 = 0;
-    const PAGE_LINES : u64 = 30; // TODO from terminal
+    let mut lines : usize = 0;
+
+
+    let page_lines : usize = match term_size::dimensions() {
+        Some((_w, h)) => h,
+        None => 30
+    };
 
     'files: while reader.read_until(b'\n', &mut buffer).unwrap() > 0 {
         writer.write(&buffer).unwrap();
@@ -57,7 +64,7 @@ fn pager<R : Read, W : Write>(from :  &mut R, to : &mut W ) {
         buffer.clear();
 
         let tty = setup_term();
-        if lines % PAGE_LINES == 0 {
+        if lines % page_lines == 0 {
             // wait for input
             writer.flush().unwrap();
             'user: for byte in tty.bytes() {
@@ -71,6 +78,7 @@ fn pager<R : Read, W : Write>(from :  &mut R, to : &mut W ) {
             }
         }
     }
+
 }
 
 fn main() -> io::Result<()> {
