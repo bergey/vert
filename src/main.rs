@@ -5,8 +5,21 @@ use std::io::{self, Write, Read};
 use std::os::unix::io::AsRawFd;
 // use std::convert::TryInto;
 
+#[cfg(unix)]
 extern crate termios;
+#[cfg(unix)]
 extern crate term_size;
+
+#[cfg(windows)]
+extern crate kernel32;
+#[cfg(windows)]
+extern crate winapi;
+#[cfg(windows)]
+use kernel32::{GetStdHandle, GetConsoleMode, SetConsoleMode};
+#[cfg(windows)]
+use winapi::um::wincon::{ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT};
+#[cfg(windows)]
+use winapi::um::winbase::{STD_INPUT_HANDLE};
 
 // TODO currently unused, but we'll need arguments again, presently
 fn parse_args(args : &mut VecDeque<String>) -> Option<u64> {
@@ -23,6 +36,7 @@ fn parse_args(args : &mut VecDeque<String>) -> Option<u64> {
     }
 }
 
+#[cfg(unix)]
 fn setup_term() -> File {
     use termios::*;
 
@@ -35,6 +49,21 @@ fn setup_term() -> File {
     tty
 }
 
+#[cfg(windows)]
+fn setup_term() { unsafe {
+    let term = GetStdHandle(STD_INPUT_HANDLE); // TODO PIPE case
+    let mut mode = 0;
+    let ok = GetConsoleMode(term, &mut mode);
+    if ok == 0 {
+        panic!("Could not get Console Mode");
+    }
+    let ok = SetConsoleMode(term, mode & !ENABLE_ECHO_INPUT & !ENABLE_LINE_INPUT);
+    if ok == 0 {
+        panic!("Could not set Console Mode");
+    }
+}}
+
+#[cfg(unix)]
 fn reset_term() {
     use termios::*;
 
@@ -43,6 +72,21 @@ fn reset_term() {
     term.c_lflag |= ICANON | ECHO;
     tcsetattr(tty.as_raw_fd(), TCSADRAIN, &term).unwrap();
 }
+
+#[cfg(windows)]
+#[inline(always)]
+fn reset_term(_: &mut ()) { unsafe {
+    let term = GetStdHandle(STD_INPUT_HANDLE); // TODO PIPE case
+    let mut mode = 0;
+    let ok = GetConsoleMode(term, &mut mode);
+    if ok == 0 {
+        panic!("Could not get Console Mode");
+    }
+    let ok = SetConsoleMode(term, mode | ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT);
+    if ok == 0 {
+        panic!("Could not set Console Mode");
+    }
+}}
 
 
 fn pager<R : Read, W : Write>(reader :  &mut R, writer : &mut W ) {
