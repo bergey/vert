@@ -9,4 +9,16 @@ let
         };
   pkgs = import nixpkgs {};
 
-in pkgs.callPackage ./. {}
+  cratesIO = pkgs.callPackage ./crates-io.nix { };
+  project = pkgs.callPackage ./Cargo.nix {
+    cratesIO = cratesIO;
+  };
+
+in  rec {
+    vert = project.vert {};
+    shell = (project.vert {}).override {
+        buildInputs = vert.nativeBuildInputs ++ [
+            pkgs.cargo
+             ];
+    };
+}
