@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::env;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, BufWriter, Write, Read};
+use std::io::{self, Write, Read};
 use std::os::unix::io::AsRawFd;
 // use std::convert::TryInto;
 
@@ -45,40 +45,77 @@ fn reset_term() {
 }
 
 
-fn pager<R : Read, W : Write>(from :  &mut R, to : &mut W ) {
-    let mut reader = BufReader::new(from);
-    let mut writer = BufWriter::new(to);
-    let mut buffer = vec![];
+fn pager<R : Read, W : Write>(reader :  &mut R, writer : &mut W ) {
+    let mut buffer = [0; 1024];
 
-    let mut lines : usize = 0;
-
-
-    let page_lines : usize = match term_size::dimensions() {
-        Some((_w, h)) => h,
-        None => 30
+    let (term_columns, term_lines) = match term_size::dimensions() {
+        Some((w, h)) => (w, h-1),
+        None => (80, 30)
     };
 
-    'files: while reader.read_until(b'\n', &mut buffer).unwrap() > 0 {
-        writer.write(&buffer).unwrap();
-        lines += 1;
-        buffer.clear();
+    let mut want_lines = term_lines;  // start with a full page; count down
+    let mut columns = term_columns;   // for consistency, count down
 
-        let tty = setup_term();
-        if lines % page_lines == 0 {
-            // wait for input
+    'chunks: while let Ok(size) = reader.read(&mut buffer) {
+        if size == 0 {
+            break;
+        }
+        let mut write_start = 0;    // start of next write
+        let mut point = 0;          // next char when counting lines
+
             writer.flush().unwrap();
+
+        loop {
+            // find a subrange with the right number of lines
+            while want_lines > 0 {
+                let c = buffer[point];
+                if c == b'\n' {
+                    want_lines -= 1;
+                    columns = term_columns;
+                    point += 1;
+                }
+                else if columns == 0 {
+                    // visual line, wrapped by terminal
+                    want_lines -= 1;
+                    columns = term_columns;
+                    // don't increment point; this char needs to start the next line
+                } else {
+                    point += 1;
+                    columns -= 1;
+                }
+                if point == size {
+                    writer.write(&buffer[write_start..point]).unwrap();
+                    continue 'chunks
+                }
+            }
+
+            writer.write(&buffer[write_start..point]).unwrap();
+            writer.flush().unwrap();
+            write_start = point;
+
+            let tty = setup_term();
             'user: for byte in tty.bytes() {
                 match byte.unwrap() {
-                    b' ' => break 'user,
-                    b'q' => {   // TODO should probably exit program, not only current file
-                        break 'files;
+                    b' ' => {
+                        want_lines = term_lines;
+                        break
+                    },
+                    b'\n' => {
+                        want_lines = 1;
+                        break
                     }
-                    _ => ()
+                    b'\r' => { // RETURN on Windows
+                        want_lines = 1;
+                        break
+                    }
+                    b'q' | 27 => {
+                        break 'chunks;
+                    }
+                    _ => (),
                 }
             }
         }
     }
-
 }
 
 fn main() -> io::Result<()> {
